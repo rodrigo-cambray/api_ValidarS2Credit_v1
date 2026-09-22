@@ -1,14 +1,20 @@
 import os
+import uuid
+import hmac
 from datetime import date, datetime
 from enum import Enum
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import BigInteger, Date, DateTime, Integer, String, URL, create_engine, select, update
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.types import JSON
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 def database_url() -> str | URL:
@@ -111,9 +117,63 @@ class AssessmentResponse(BaseModel):
     reportesPersistidos: list[str]
 
 
+class ProblemDetails(BaseModel):
+    type: str
+    title: str
+    status: int
+    detail: str
+    instance: str
+    code: str
+    traceId: str
+    errors: list[dict[str, str]] | None = None
+
+
+PROBLEM_OPENAPI = {
+    "description": "RFC 9457 Problem Details",
+    "content": {"application/problem+json": {"schema": ProblemDetails.model_json_schema()}},
+}
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def problem_response(request: Request, status_code: int, title: str, detail: str, code: str,
+                     errors: list[dict[str, str]] | None = None,
+                     headers: dict[str, str] | None = None) -> JSONResponse:
+    trace_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    body: dict[str, Any] = {
+        "type": f"https://credit-history-assessment-service/problems/{code.lower().replace('_', '-')}",
+        "title": title,
+        "status": status_code,
+        "detail": detail,
+        "instance": request.url.path,
+        "code": code,
+        "traceId": trace_id,
+    }
+    if errors:
+        body["errors"] = errors
+    response_headers = {"X-Request-ID": trace_id}
+    response_headers.update(headers or {})
+    return JSONResponse(body, status_code=status_code, media_type="application/problem+json", headers=response_headers)
+
+
+def validation_errors(exc: RequestValidationError) -> list[dict[str, str]]:
+    problems = []
+    for error in exc.errors():
+        fields = [str(field).replace("~", "~0").replace("/", "~1") for field in error["loc"] if field != "body"]
+        problems.append({"pointer": "#/" + "/".join(fields) if fields else "#", "detail": error["msg"]})
+    return problems
+
+
 def get_db():
     with SessionLocal() as session:
         yield session
+
+
+def require_bearer(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)) -> None:
+    secret = os.getenv("BEARER_TOKEN")
+    if not secret:
+        raise HTTPException(503, "Autenticación no configurada")
+    if not credentials or credentials.scheme.lower() != "bearer" or not hmac.compare_digest(credentials.credentials.encode(), secret.encode()):
+        raise HTTPException(401, "Credenciales Bearer inválidas", headers={"WWW-Authenticate": "Bearer"})
 
 
 def exists(value: Any) -> bool:
@@ -143,7 +203,7 @@ def decision(detail: Detalle) -> tuple[Estado, str | None]:
 
 
 def credit_type(offer: Oferta) -> str:
-    return "SEGUNDO_CREDITO" if offer.etapa == "S2CREADIT" else "PRIMER_CREDITO"
+    return "SEGUNDO_CREDITO" if offer.etapa == "S2CREDIT" else "PRIMER_CREDITO"
 
 
 def deactivate_reports(db: Session, person_id: int) -> None:
@@ -191,19 +251,40 @@ def assessment_response(offer: Oferta, state: Estado, reason: str | None, report
 app = FastAPI(title="credit-history-assessment-service", version="1.0.0")
 
 
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    titles = {400: ("Solicitud no válida", "BAD_REQUEST"), 404: ("Recurso no encontrado", "NOT_FOUND"),
+              409: ("Conflicto", "CONFLICT"), 403: ("Acceso denegado", "FORBIDDEN"),
+              401: ("No autorizado", "UNAUTHORIZED"), 503: ("Servicio no disponible", "AUTH_NOT_CONFIGURED")}
+    title, code = titles.get(exc.status_code, ("Error de solicitud", "HTTP_ERROR"))
+    return problem_response(request, exc.status_code, title, str(exc.detail), code, headers=dict(exc.headers or {}))
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return problem_response(request, 422, "Solicitud no válida", "Revise los campos indicados.", "VALIDATION_ERROR",
+                            validation_errors(exc))
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    return problem_response(request, 500, "Error interno", "No fue posible completar la solicitud.", "INTERNAL_ERROR")
+
+
 @app.get("/health/live")
 def live():
     return {"status": "ok"}
 
 
-@app.get("/health/ready")
-def ready(db: Session = Depends(get_db)):
+@app.get("/health/ready", responses={401: PROBLEM_OPENAPI, 500: PROBLEM_OPENAPI, 503: PROBLEM_OPENAPI})
+def ready(_: None = Depends(require_bearer), db: Session = Depends(get_db)):
     db.execute(select(1))
     return {"status": "ok"}
 
 
-@app.post("/v1/credit-assessments", response_model=AssessmentResponse, status_code=status.HTTP_201_CREATED)
-def assess(request: AssessmentRequest, db: Session = Depends(get_db)):
+@app.post("/v1/credit-assessments", response_model=AssessmentResponse, status_code=status.HTTP_201_CREATED,
+          responses={401: PROBLEM_OPENAPI, 404: PROBLEM_OPENAPI, 422: PROBLEM_OPENAPI, 500: PROBLEM_OPENAPI, 503: PROBLEM_OPENAPI})
+def assess(request: AssessmentRequest, _: None = Depends(require_bearer), db: Session = Depends(get_db)):
     offer = db.get(Oferta, request.idOferta)
     if not offer:
         raise HTTPException(404, "Oferta no encontrada")
@@ -220,8 +301,9 @@ def assess(request: AssessmentRequest, db: Session = Depends(get_db)):
                                first_value(request.calificadorDetalle.reporteCirculo, "id_unykoo", "idUnykoo"))
 
 
-@app.get("/v1/credit-assessments/by-oferta/{idOferta}", response_model=AssessmentResponse)
-def by_offer(idOferta: int, db: Session = Depends(get_db)):
+@app.get("/v1/credit-assessments/by-oferta/{idOferta}", response_model=AssessmentResponse,
+         responses={401: PROBLEM_OPENAPI, 404: PROBLEM_OPENAPI, 422: PROBLEM_OPENAPI, 500: PROBLEM_OPENAPI, 503: PROBLEM_OPENAPI})
+def by_offer(idOferta: int, _: None = Depends(require_bearer), db: Session = Depends(get_db)):
     offer = db.get(Oferta, idOferta)
     if not offer:
         raise HTTPException(404, "Oferta no encontrada")

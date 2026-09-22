@@ -1,4 +1,4 @@
-# Contrato de API validar\_S2Creadit\_v1
+# Contrato de API validar\_S2Credit\_v1
 
 Este contrato define la API que clasifica una oferta como primer o segundo crédito y, para primer crédito, persiste los reportes recibidos de BC Calificador en las tablas heredadas. No consulta proveedores externos ni crea tablas.
 
@@ -27,7 +27,7 @@ Este contrato define la API que clasifica una oferta como primer o segundo créd
 **Incluye:**
 
 -   Consultar `oferta` por `idOferta` para obtener la persona y su etapa.
--   Clasificar `S2CREADIT` como `SEGUNDO_CREDITO`; cualquier otra etapa como `PRIMER_CREDITO`.
+-   Clasificar `S2CREDIT` como `SEGUNDO_CREDITO`; cualquier otra etapa como `PRIMER_CREDITO`.
 -   Para primer crédito, desactivar los reportes activos anteriores e insertar Buró, Círculo y Quash disponibles.
 -   Para segundo crédito, no escribir reportes.
 
@@ -50,7 +50,7 @@ Este contrato define la API que clasifica una oferta como primer o segundo créd
 
 | Artefacto | Ruta o vínculo | Carácter |
 | --- | --- | --- |
-| Contrato descriptivo | `docs/Contrato API credit history assessment service.md` | Normativo mientras no exista OpenAPI versionado |
+| Contrato descriptivo | `docs/Contrato API_s2cRESDIT_v1.md` | Normativo mientras no exista OpenAPI versionado |
 | Swagger | `/docs` | Representación generada |
 | Esquema generado | `/openapi.json` | Normativo en modo code-first |
 | Diagrama de flujo | `No aplica` | No aplica |
@@ -68,7 +68,7 @@ Este contrato define la API que clasifica una oferta como primer o segundo créd
 | Producción | `Pendiente de asignar` | Interna | Deshabilitado o restringido |
 
 -   Formato principal: `application/json`.
--   Errores actuales: `application/json`; `application/problem+json` está pendiente de implementación.
+-   Errores: `application/problem+json`, conforme a RFC 9457.
 -   Fechas recibidas o persistidas por el servicio: fecha local de ejecución; no forman parte de las respuestas actuales.
 -   Codificación: UTF-8.
 -   Ruta principal: `/v1`.
@@ -77,31 +77,32 @@ Este contrato define la API que clasifica una oferta como primer o segundo créd
 
 ### 5.1 Estado actual
 
-La API no implementa autenticación todavía. Sólo debe exponerse en redes internas controladas. Antes de producción se debe implementar `X-API-Key` o el mecanismo corporativo equivalente y deshabilitar o restringir Swagger.
+Todo endpoint que consulta la base de datos exige un token estático Bearer:
 
-### 5.2 API key
+```http
+Authorization: Bearer <BEARER_TOKEN>
+```
 
-No aplica en la implementación actual. Pendiente antes de producción: llave por consumidor y ambiente, secreto fuera de código e imagen, almacenamiento de huella no reversible y auditoría mediante `key_id`.
+El secreto se obtiene de `BEARER_TOKEN`. Si falta, el esquema no es Bearer o el valor no coincide, la API responde `401` con `WWW-Authenticate: Bearer`. Si el secreto no está configurado, responde `503` sin exponerlo.
 
-### 5.3 Rotación trimestral de API key
+### 5.2 Token Bearer
 
-No aplica hasta implementar autenticación. La política prevista es rotación trimestral, preparación siete días antes y gracia de 72 horas.
+No hay login, JWT, expiración, rotación ni múltiples clientes. El secreto no debe almacenarse en Git, imágenes Docker o logs; se configura mediante el ambiente del contenedor.
 
-### 5.4 Excepciones
+### 5.3 Excepciones
 
 | Ruta exceptuada | Motivo | Control compensatorio | Expira |
 | --- | --- | --- | --- |
 | `/health/live` | Sonda de proceso | Respuesta mínima | No aplica |
-| `/health/ready` | Sonda de conectividad | Restringir a infraestructura | No aplica |
 
 ## 6\. Inventario de endpoints
 
 | Método | Ruta | operationId | Objetivo | Seguridad | Estado |
 | --- | --- | --- | --- | --- | --- |
 | `GET` | `/health/live` | `live` | Verifica que el proceso responde | Pública interna | Implementado |
-| `GET` | `/health/ready` | `ready` | Verifica conectividad con la base | Pública interna | Implementado |
-| `POST` | `/v1/credit-assessments` | `assess` | Clasifica la oferta y persiste reportes de primer crédito | Red interna, sin API key actual | Implementado |
-| `GET` | `/v1/credit-assessments/by-oferta/{idOferta}` | `by_offer` | Consulta los reportes activos de la persona de la oferta | Red interna, sin API key actual | Implementado |
+| `GET` | `/health/ready` | `ready` | Verifica conectividad con la base | Bearer | Implementado |
+| `POST` | `/v1/credit-assessments` | `assess` | Clasifica la oferta y persiste reportes de primer crédito | Bearer | Implementado |
+| `GET` | `/v1/credit-assessments/by-oferta/{idOferta}` | `by_offer` | Consulta los reportes activos de la persona de la oferta | Bearer | Implementado |
 
 ## 7\. Ficha por endpoint
 
@@ -111,7 +112,7 @@ No aplica hasta implementar autenticación. La política prevista es rotación t
 
 **Objetivo:** confirmar que el proceso HTTP está activo.
 
-**Reglas de autorización:** pública sólo para infraestructura interna.
+**Reglas de autorización:** `Authorization: Bearer <BEARER_TOKEN>`.
 
 **Idempotencia:** No aplica.
 
@@ -138,7 +139,9 @@ No aplica hasta implementar autenticación. La política prevista es rotación t
 | HTTP | Cuándo ocurre | Esquema |
 | --- | --- | --- |
 | `200` | La consulta de disponibilidad fue exitosa | Objeto con `status` |
-| `500` | No se puede consultar la base | Error JSON de FastAPI |
+| `401` | Falta o falla el token Bearer | `ProblemDetails` RFC 9457; `WWW-Authenticate: Bearer` |
+| `503` | `BEARER_TOKEN` no está configurado | `ProblemDetails` RFC 9457 |
+| `500` | No se puede consultar la base | `ProblemDetails` RFC 9457 |
 
 ### 7.3 `POST /v1/credit-assessments`
 
@@ -146,11 +149,15 @@ No aplica hasta implementar autenticación. La política prevista es rotación t
 
 **Objetivo:** clasificar la oferta y guardar los reportes disponibles cuando corresponde a primer crédito.
 
-**Reglas de autorización:** red interna; autenticación pendiente.
+**Reglas de autorización:** `Authorization: Bearer <BEARER_TOKEN>`.
 
 **Idempotencia:** No. Un reintento de primer crédito desactiva los registros activos de la persona e inserta nuevos registros.
 
-**Parámetros:** no tiene parámetros de ruta, consulta ni encabezados obligatorios.
+**Parámetros:**
+
+| Nombre | Ubicación | Tipo/formato | Obligatorio | Restricciones | Ejemplo |
+| --- | --- | --- | --- | --- | --- |
+| `Authorization` | header | HTTP Bearer | Sí | Debe ser `Bearer <BEARER_TOKEN>` | `Bearer ejemplo` |
 
 **Solicitud de ejemplo:**
 
@@ -194,9 +201,11 @@ No aplica hasta implementar autenticación. La política prevista es rotación t
 | HTTP | Cuándo ocurre | Esquema |
 | --- | --- | --- |
 | `201` | Oferta encontrada y operación completada | `AssessmentResponse` |
-| `404` | No existe la oferta | Error JSON de FastAPI |
-| `422` | Falta `idOferta`, es menor que uno o el cuerpo no es válido | Error JSON de FastAPI |
-| `500` | Error de base o escritura | Error JSON de FastAPI |
+| `401` | Falta o falla el token Bearer | `ProblemDetails` RFC 9457; `WWW-Authenticate: Bearer` |
+| `404` | No existe la oferta | `ProblemDetails` RFC 9457 |
+| `422` | Falta `idOferta`, es menor que uno o el cuerpo no es válido | `ProblemDetails` RFC 9457 |
+| `503` | `BEARER_TOKEN` no está configurado | `ProblemDetails` RFC 9457 |
+| `500` | Error de base o escritura | `ProblemDetails` RFC 9457 |
 
 ### 7.4 `GET /v1/credit-assessments/by-oferta/{idOferta}`
 
@@ -204,7 +213,7 @@ No aplica hasta implementar autenticación. La política prevista es rotación t
 
 **Objetivo:** obtener los tipos de reporte activos asociados a la persona de una oferta.
 
-**Reglas de autorización:** red interna; autenticación pendiente.
+**Reglas de autorización:** `Authorization: Bearer <BEARER_TOKEN>`.
 
 **Idempotencia:** Sí.
 
@@ -213,6 +222,7 @@ No aplica hasta implementar autenticación. La política prevista es rotación t
 | Nombre | Ubicación | Tipo/formato | Obligatorio | Restricciones | Ejemplo |
 | --- | --- | --- | --- | --- | --- |
 | `idOferta` | path | entero | Sí | Debe identificar una fila existente de `oferta` | `12345` |
+| `Authorization` | header | HTTP Bearer | Sí | Debe ser `Bearer <BEARER_TOKEN>` | `Bearer ejemplo` |
 
 **Respuesta exitosa de ejemplo:**
 
@@ -231,8 +241,11 @@ No aplica hasta implementar autenticación. La política prevista es rotación t
 | HTTP | Cuándo ocurre | Esquema |
 | --- | --- | --- |
 | `200` | Oferta encontrada | `AssessmentResponse` |
-| `404` | No existe la oferta | Error JSON de FastAPI |
-| `500` | Error de base | Error JSON de FastAPI |
+| `401` | Falta o falla el token Bearer | `ProblemDetails` RFC 9457; `WWW-Authenticate: Bearer` |
+| `404` | No existe la oferta | `ProblemDetails` RFC 9457 |
+| `422` | Parámetro `idOferta` inválido | `ProblemDetails` RFC 9457 |
+| `503` | `BEARER_TOKEN` no está configurado | `ProblemDetails` RFC 9457 |
+| `500` | Error de base | `ProblemDetails` RFC 9457 |
 
 ## 8\. Modelos de información
 
@@ -253,12 +266,35 @@ No aplica hasta implementar autenticación. La política prevista es rotación t
 | `AssessmentResponse` | `motivo` | cadena o nulo | Sí | Nulo si no aplica | Interno |
 | `AssessmentResponse` | `idUnykoo` | cadena o nulo | Sí | Derivado de Círculo cuando está disponible | Confidencial |
 | `AssessmentResponse` | `reportesPersistidos` | arreglo de cadenas | Sí | Valores `BURO`, `CIRCULO`, `QUASH` | Interno |
+| `ProblemDetails` | `type` | URI | Sí | Identificador estable del problema | Interno |
+| `ProblemDetails` | `title` | cadena | Sí | Resumen legible del tipo de problema | Interno |
+| `ProblemDetails` | `status` | entero | Sí | Mismo código que el estado HTTP | Interno |
+| `ProblemDetails` | `detail` | cadena | Sí | Explicación segura para el consumidor | Interno |
+| `ProblemDetails` | `instance` | URI relativa | Sí | Ruta de la solicitud que falló | Interno |
+| `ProblemDetails` | `code` | cadena | Sí | Extensión estable de negocio o infraestructura | Interno |
+| `ProblemDetails` | `traceId` | UUID | Sí | Extensión para correlación; también llega en `X-Request-ID` | Interno |
+| `ProblemDetails` | `errors` | arreglo | No | Errores de validación con `pointer` JSON Pointer y `detail` | Interno |
 
 Los consumidores deben tolerar campos nuevos en objetos JSON. No deben registrar los objetos de reporte completos ni `idUnykoo` fuera de controles de datos confidenciales.
 
 ### 8.1 Formato uniforme de errores
 
-La implementación actual devuelve errores JSON generados por FastAPI. La adopción de `application/problem+json` con `code`, `traceId` y `errors` queda pendiente; los consumidores no deben depender de detalles internos ni de trazas.
+Toda respuesta de error usa `Content-Type: application/problem+json` y los miembros de RFC 9457: `type`, `title`, `status`, `detail` e `instance`. Las extensiones `code` y `traceId` siempre están presentes; `errors` sólo aparece en validaciones `422`. `traceId` también se devuelve como encabezado `X-Request-ID` y reutiliza ese encabezado si el consumidor lo envía.
+
+Ejemplo de validación:
+
+```json
+{
+  "type": "https://credit-history-assessment-service/problems/validation-error",
+  "title": "Solicitud no válida",
+  "status": 422,
+  "detail": "Revise los campos indicados.",
+  "instance": "/v1/credit-assessments",
+  "code": "VALIDATION_ERROR",
+  "traceId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "errors": [{"pointer": "#/idOferta", "detail": "Input should be greater than 0"}]
+}
+```
 
 ## 9\. Aprobación
 

@@ -7,8 +7,8 @@ ENV VIRTUAL_ENV=/opt/venv \
 COPY requirements.txt .
 RUN python -m venv $VIRTUAL_ENV && \
     $VIRTUAL_ENV/bin/pip install --no-cache-dir -r requirements.txt
-COPY app ./app
 RUN useradd --create-home appuser
+COPY --chown=appuser:appuser app ./app
 USER appuser
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

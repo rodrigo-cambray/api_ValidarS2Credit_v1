@@ -8,4 +8,5 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:?set MYSQL_DATABASE in .env}
       MYSQL_USER: ${MYSQL_USER:?set MYSQL_USER in .env}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      BEARER_TOKEN: ${BEARER_TOKEN:?set BEARER_TOKEN in .env}
     ports: ["8000:8000"]
