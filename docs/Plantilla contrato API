@@ -1,0 +1,240 @@
+# Plantilla de contrato de API
+
+> Copiar este archivo para cada API, reemplazar todos los valores
+> `{{PENDIENTE}}` y marcar como `No aplica` aquello que no corresponda. No se
+> deben eliminar secciones sin dejar registrada la decisión.
+
+## 1. Control del documento
+
+| Campo | Valor |
+|---|---|
+| Nombre de la API | `{{PENDIENTE}}` |
+| Identificador del producto | `{{PENDIENTE}}` |
+| Versión del contrato | `0.1.0` |
+| Versión de la API | `v1` |
+| Estado | `Borrador / En revisión / Aprobado / Retirado` |
+| Propietario técnico | `{{PENDIENTE}}` |
+| Propietario funcional | `{{PENDIENTE}}` |
+| Equipo consumidor | `{{PENDIENTE}}` |
+| Fecha de creación | `AAAA-MM-DD` |
+| Última actualización | `AAAA-MM-DD` |
+| Aprobadores | `{{PENDIENTE}}` |
+
+## 2. Propósito y alcance
+
+**Problema que resuelve:** `{{PENDIENTE}}`
+
+**Resultado esperado:** `{{PENDIENTE}}`
+
+**Incluye:**
+
+- `{{PENDIENTE}}`
+
+**No incluye:**
+
+- `{{PENDIENTE}}`
+
+**Actores y consumidores:**
+
+| Actor o sistema | Responsabilidad | Ambiente | Contacto |
+|---|---|---|---|
+| `{{PENDIENTE}}` | `{{PENDIENTE}}` | `{{PENDIENTE}}` | `{{PENDIENTE}}` |
+
+## 3. Artefactos y fuente de verdad
+
+| Artefacto | Ruta o vínculo | Carácter |
+|---|---|---|
+| Contrato OpenAPI | `contracts/openapi.yaml` | Normativo |
+| Swagger | `/docs` | Representación del contrato |
+| Esquema generado | `/openapi.json` | Normativo solo en modo `code-first` |
+| Diagrama de flujo | `contracts/{{PENDIENTE}}.jam` | Informativo |
+| Decisiones técnicas | `docs/adr/` | Normativo para decisiones aprobadas |
+
+**Modo elegido:** `contract-first / code-first`
+
+El archivo `.jam` explica el flujo de forma visual, pero no puede contradecir
+los paths, modelos, códigos HTTP o reglas de seguridad del OpenAPI aprobado.
+
+## 4. Ambientes y direccionamiento
+
+| Ambiente | URL base | Exposición | Swagger |
+|---|---|---|---|
+| Local | `http://localhost:8000` | Equipo local | Habilitado |
+| Desarrollo | `{{PENDIENTE}}` | `{{PENDIENTE}}` | Restringido |
+| QA | `{{PENDIENTE}}` | `{{PENDIENTE}}` | Restringido |
+| Producción | `{{PENDIENTE}}` | `{{PENDIENTE}}` | Deshabilitado o interno |
+
+- Formato principal: `application/json`.
+- Errores: `application/problem+json`.
+- Fechas y horas: RFC 3339, UTC y sufijo `Z`.
+- Codificación: UTF-8.
+- Versión mayor en ruta cuando aplique: `/api/v1`.
+
+## 5. Seguridad obligatoria
+
+### 5.1 Regla general
+
+Todo endpoint funcional exige una API key válida:
+
+```http
+X-API-Key: <API_KEY>
+```
+
+En OpenAPI se declara mediante el esquema `apiKeyAuth`:
+
+```yaml
+security:
+  - apiKeyAuth: []
+```
+
+### 5.2 API key
+
+- Existe una llave diferente por consumidor y ambiente.
+- El secreto se genera con aleatoriedad criptográfica y al menos 256 bits.
+- Nunca se almacena en código, Git, imágenes Docker, URLs ni logs.
+- En tránsito siempre viaja mediante HTTPS/TLS.
+- Para validación se guarda una huella no reversible; si debe recuperarse, el
+  original se conserva cifrado en un gestor de secretos.
+- El `key_id`, no el secreto, se utiliza para auditoría y límites de consumo.
+
+### 5.3 Rotación trimestral de API key
+
+| Parámetro | Regla inicial |
+|---|---|
+| Frecuencia | Día 1, cada 3 meses |
+| Zona horaria | UTC |
+| Preparación | Generar y distribuir 7 días antes |
+| Periodo de gracia | 72 horas |
+| Estados | `pending -> active -> grace -> revoked` |
+| Emergencia | Revocación inmediata, sin gracia |
+| Ejecutor | Gestor de secretos o proceso externo; nunca cada réplica de la API |
+
+**Gestor de secretos elegido:** `{{PENDIENTE}}`
+
+**Responsable de la rotación:** `{{PENDIENTE}}`
+
+**Canal seguro de distribución:** `{{PENDIENTE}}`
+
+### 5.4 Excepciones
+
+- `/health` puede permanecer público si devuelve únicamente estado mínimo y no
+  revela dependencias, configuración, versiones de librerías ni trazas.
+- Swagger y OpenAPI se habilitan en local/pruebas. En producción se deshabilitan
+  o restringen a una red y audiencia internas.
+- Toda excepción adicional requiere justificación, propietario y fecha de
+  expiración.
+
+| Ruta exceptuada | Motivo | Control compensatorio | Expira |
+|---|---|---|---|
+| `/health` | Sonda de infraestructura | Respuesta mínima y rate limit | No aplica |
+
+## 6. Inventario de endpoints
+
+| Método | Ruta | operationId | Objetivo | Seguridad | Estado |
+|---|---|---|---|---|---|
+| `GET` | `/health` | `getHealth` | Estado mínimo de la API | Pública | Propuesto |
+| `{{MÉTODO}}` | `{{RUTA}}` | `{{OPERATION_ID}}` | `{{OBJETIVO}}` | API key | Borrador |
+
+## 7. Ficha por endpoint
+
+Copiar esta sección por cada operación e incrementar el consecutivo: `7.1`,
+`7.2`, `7.3`, etcétera.
+
+### 7.1 `{{MÉTODO}} {{RUTA}}`
+
+**operationId:** `{{PENDIENTE}}`
+
+**Objetivo:** `{{PENDIENTE}}`
+
+**Reglas de autorización:** `{{PENDIENTE}}`
+
+**Idempotencia:** `Sí / No / No aplica`
+
+**Parámetros:**
+
+| Nombre | Ubicación | Tipo/formato | Obligatorio | Restricciones | Ejemplo |
+|---|---|---|---|---|---|
+| `{{PENDIENTE}}` | `path/query/header` | `{{PENDIENTE}}` | `Sí/No` | `{{PENDIENTE}}` | `{{PENDIENTE}}` |
+
+**Solicitud de ejemplo:**
+
+```json
+{
+  "campo": "valor-de-ejemplo-no-sensible"
+}
+```
+
+**Respuesta exitosa de ejemplo:**
+
+```json
+{
+  "id": "identificador-de-ejemplo"
+}
+```
+
+**Respuestas:**
+
+| HTTP | Cuándo ocurre | Esquema | Encabezados relevantes |
+|---|---|---|---|
+| `{{2XX}}` | `{{PENDIENTE}}` | `{{PENDIENTE}}` | `{{PENDIENTE}}` |
+| `400` | Solicitud semánticamente inválida | `ProblemDetails` | `X-Request-ID` |
+| `401` | Falta o falla la API key | `ProblemDetails` | `X-Request-ID` |
+| `403` | Identidad válida sin permisos | `ProblemDetails` | `X-Request-ID` |
+| `404` | Recurso inexistente | `ProblemDetails` | `X-Request-ID` |
+| `409` | Conflicto con el estado actual | `ProblemDetails` | `X-Request-ID` |
+| `422` | Estructura o campos inválidos | `ProblemDetails` | `X-Request-ID` |
+| `429` | Límite de consumo excedido | `ProblemDetails` | `Retry-After` |
+| `500` | Error interno no previsto | `ProblemDetails` | `X-Request-ID` |
+
+## 8. Modelos de información
+
+Por cada modelo se debe definir:
+
+- Campos obligatorios y opcionales.
+- Tipo, formato, longitud, rango y patrón.
+- Nulabilidad explícita.
+- Enumeraciones y unidades.
+- Relaciones e identificadores.
+- Datos sensibles y reglas de enmascaramiento.
+- Ejemplos ficticios que no parezcan credenciales reales.
+- Compatibilidad esperada ante campos nuevos.
+
+| Modelo | Campo | Tipo | Requerido | Restricciones | Clasificación |
+|---|---|---|---|---|---|
+| `{{PENDIENTE}}` | `{{PENDIENTE}}` | `{{PENDIENTE}}` | `Sí/No` | `{{PENDIENTE}}` | `Público/Interno/Confidencial` |
+
+### 8.1 Formato uniforme de errores
+
+Se utiliza `application/problem+json`, basado en Problem Details para APIs
+HTTP. Extensiones corporativas: `code`, `traceId` y `errors`.
+
+```json
+{
+  "type": "https://api.example.com/problems/validation-error",
+  "title": "La solicitud no es válida",
+  "status": 422,
+  "detail": "Revise los campos indicados.",
+  "instance": "/api/v1/resources",
+  "code": "VALIDATION_ERROR",
+  "traceId": "00000000-0000-0000-0000-000000000000",
+  "errors": [
+    {
+      "field": "name",
+      "message": "El campo es obligatorio"
+    }
+  ]
+}
+```
+
+Los errores públicos no incluyen stack traces, SQL, rutas del servidor,
+tokens, llaves ni detalles de infraestructura.
+
+
+## 9. Aprobación
+
+| Rol | Nombre | Decisión | Fecha |
+|---|---|---|---|
+| Negocio | `{{PENDIENTE}}` | `Pendiente` | `AAAA-MM-DD` |
+| Desarrollo | `{{PENDIENTE}}` | `Pendiente` | `AAAA-MM-DD` |
+| Seguridad | `{{PENDIENTE}}` | `Pendiente` | `AAAA-MM-DD` |
+| Infraestructura | `{{PENDIENTE}}` | `Pendiente` | `AAAA-MM-DD` |
