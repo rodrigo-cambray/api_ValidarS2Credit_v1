@@ -1,0 +1,14 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+deploy/cloud-run.env
+gha-creds-*.json
+*.pem
+*.key
+*.p12
+__pycache__
+.pytest_cache
+.venv
+tests

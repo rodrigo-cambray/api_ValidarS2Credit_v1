@@ -111,3 +111,52 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8000/v1/credit-assessments 
 - Swagger: `http://localhost:8000/docs`
 - OpenAPI: `http://localhost:8000/openapi.json`
 - Contrato funcional: [docs/Contrato API_s2cRESDIT_v1.md](docs/Contrato%20API_s2cRESDIT_v1.md)
+
+## Despliegue manual a Cloud Run
+
+El workflow [.github/workflows/deploy-cloud-run.yml](.github/workflows/deploy-cloud-run.yml) se ejecuta **sólo** desde GitHub Actions mediante `workflow_dispatch`. Un push nunca despliega el servicio.
+
+### Secrets del Environment `cloud-run-production`
+
+Configure estos GitHub Environment Secrets, sin valores en archivos versionados:
+
+| Secret | Uso |
+|---|---|
+| `GCP_PROJECT_ID` | Proyecto de Google Cloud. |
+| `GCP_REGION` | Región de Cloud Run y Artifact Registry. |
+| `CLOUD_RUN_SERVICE` | Nombre del servicio Cloud Run. |
+| `ARTIFACT_REPOSITORY` | Repositorio Docker existente en Artifact Registry. |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Nombre completo del provider WIF. |
+| `GCP_SERVICE_ACCOUNT` | Cuenta de servicio que GitHub Actions impersona mediante WIF. |
+| `CLOUD_RUN_ALLOW_UNAUTHENTICATED` | `false` para mantener el servicio privado; `true` habilita acceso público explícitamente. |
+| `CLOUD_RUN_ENV_FILE_B64` | Archivo de ejecución privado codificado en Base64. |
+
+### Preparar `CLOUD_RUN_ENV_FILE_B64`
+
+1. Copie la plantilla sin secretos:
+
+   ```powershell
+   Copy-Item deploy/cloud-run.env.example deploy/cloud-run.env
+   ```
+
+2. Complete únicamente `deploy/cloud-run.env` con los valores reales de producción. No agregue `PORT`; Cloud Run lo inyecta.
+3. Codifique el archivo sin imprimir su contenido:
+
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes('deploy/cloud-run.env'))
+   ```
+
+4. Guarde la salida como el secret `CLOUD_RUN_ENV_FILE_B64` del Environment `cloud-run-production` y elimine o conserve de forma segura el archivo local. `deploy/cloud-run.env` está ignorado por Git y Docker.
+
+### Ejecutar el workflow
+
+En GitHub, abra **Actions**, seleccione **Deploy Cloud Run**, pulse **Run workflow** y confirme el Environment `cloud-run-production`. Las reglas de protección de ese Environment, si existen, se aplican antes del despliegue.
+
+### Configuración pendiente del administrador de Cloud Run
+
+- Crear el repositorio Docker de Artifact Registry en `GCP_REGION`.
+- Configurar Workload Identity Federation para este repositorio de GitHub y restringirlo al repositorio, rama o Environment permitidos.
+- Otorgar a la identidad federada `roles/iam.workloadIdentityUser` sobre `GCP_SERVICE_ACCOUNT`.
+- Otorgar a `GCP_SERVICE_ACCOUNT` los permisos mínimos para publicar en Artifact Registry y desplegar Cloud Run, normalmente `roles/artifactregistry.writer`, `roles/run.admin` y `roles/iam.serviceAccountUser` sobre la cuenta de ejecución de Cloud Run.
+- Verificar que la cuenta de ejecución de Cloud Run puede leer la imagen de Artifact Registry y tiene conectividad autorizada hacia la base de datos existente.
+- Mantener `CLOUD_RUN_ALLOW_UNAUTHENTICATED=false` salvo que se apruebe explícitamente acceso público.
