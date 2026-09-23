@@ -1,6 +1,7 @@
 services:
   api:
     build: .
+    # MYSQL_USER must be restricted to SELECT on oferta.
     environment:
       DATABASE_URL: ${DATABASE_URL:-}
       MYSQL_HOST: ${MYSQL_HOST:?set MYSQL_HOST in .env}
